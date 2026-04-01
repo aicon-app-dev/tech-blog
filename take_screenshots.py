@@ -1,8 +1,4 @@
-"""GitHubスクショ自動取得スクリプト
-
-gh auth tokenでGitHub APIからセッションを取得し、Playwrightでスクショを撮る。
-"""
-import subprocess
+"""GitHubスクショ自動取得 — Chromeデバッグポート経由"""
 import os
 from playwright.sync_api import sync_playwright
 
@@ -11,214 +7,101 @@ BASE_URL = f"https://github.com/{REPO}"
 SAVE_DIR = "/Users/ohkawa/Documents/aicon/tech-blog/screenshots"
 
 
-def get_gh_token() -> str:
-    """gh auth tokenを取得する"""
-    result = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
-    return result.stdout.strip()
+def _goto(page, url: str) -> None:
+    """ページ遷移してロード完了を待つ"""
+    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    page.wait_for_timeout(3000)
+
+
+def _shot(page, filename: str, full_page: bool = False) -> None:
+    """スクショ保存"""
+    path = f"{SAVE_DIR}/{filename}"
+    page.screenshot(path=path, full_page=full_page)
+    print(f"  保存: {filename}")
 
 
 def take_screenshots() -> None:
-    """各種スクショを撮影する"""
-    token = get_gh_token()
     os.makedirs(SAVE_DIR, exist_ok=True)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-        )
-
+        browser = p.chromium.connect_over_cdp("http://127.0.0.1:9222")
+        context = browser.contexts[0]
         page = context.new_page()
-
-        # GitHubにOAuthトークンでログイン
-        # gh CLIトークンをcookieではなくBasic Auth的に使う
-        # GitHub Sessions APIでセッションcookieを取得
-        page.set_extra_http_headers({
-            "Authorization": f"token {token}"
-        })
-
-        # まずGitHubのトップにアクセスしてログイン状態を確認
-        page.goto("https://github.com")
-        page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(1000)
-
-        # Authorizationヘッダーだと通常のWeb UIは動かないので
-        # device flowで取得したトークンでgithub sessionを作る
-        # → gh auth login --with-tokenで取得したトークンをgist APIで検証
-        result = subprocess.run(
-            ["gh", "api", "user", "--jq", ".login"],
-            capture_output=True, text=True
-        )
-        print(f"ログインユーザー: {result.stdout.strip()}")
-
-        # Playwrightで直接ログインフォームを使う
-        page2 = context.new_page()
-        page2.goto("https://github.com/login")
-        page2.wait_for_load_state("networkidle")
-
-        # ログイン済みかチェック
-        if "login" in page2.url:
-            print("ブラウザ未ログイン。GitHub CLIトークンでAPIスクショに切り替えます。")
-            browser.close()
-
-            # APIベースでデータ取得→HTMLレンダリングの代わりに
-            # Playwrightで既存ブラウザセッションを利用
-            _take_with_chrome_profile(p)
-            return
-
-        print("ブラウザログイン済み")
-        _take_pages(page2)
-        browser.close()
-
-
-def _take_with_chrome_profile(playwright) -> None:
-    """Chromeの既存プロファイルを使ってスクショを撮る"""
-    # macOSのChromeプロファイルパスを特定
-    chrome_profiles = [
-        os.path.expanduser("~/Library/Application Support/Google/Chrome"),
-        os.path.expanduser("~/Library/Application Support/Google/Chrome/Profile 1"),
-    ]
-
-    user_data_dir = None
-    for p in chrome_profiles:
-        if os.path.exists(p):
-            user_data_dir = p
-            break
-
-    if not user_data_dir:
-        print("Chromeプロファイルが見つかりません")
-        return
-
-    print(f"Chromeプロファイル使用: {user_data_dir}")
-
-    # 既存Chromeが起動中だとロックされるので、一時コピーを使う
-    import shutil
-    import tempfile
-    tmp_dir = tempfile.mkdtemp(prefix="chrome_profile_")
-    print(f"一時プロファイル: {tmp_dir}")
-
-    # cookieとLocalStateだけコピー
-    for item in ["Default", "Local State"]:
-        src = os.path.join(user_data_dir, item)
-        dst = os.path.join(tmp_dir, item)
-        if os.path.isdir(src):
-            shutil.copytree(src, dst, dirs_exist_ok=True)
-        elif os.path.isfile(src):
-            shutil.copy2(src, dst)
-
-    try:
-        context = playwright.chromium.launch_persistent_context(
-            user_data_dir=tmp_dir,
-            headless=True,
-            viewport={"width": 1920, "height": 1080},
-            args=["--disable-blink-features=AutomationControlled"],
-        )
-
-        page = context.pages[0] if context.pages else context.new_page()
-        page.goto(f"{BASE_URL}")
-        page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(2000)
+        page.set_viewport_size({"width": 1280, "height": 900})
 
         # ログイン確認
+        _goto(page, BASE_URL)
         if "login" in page.url:
-            print("Chromeプロファイルでもログインできませんでした")
-            context.close()
+            print("未ログイン。")
+            browser.close()
             return
 
-        print("GitHubログイン成功！スクショ撮影開始...")
-        _take_pages(page)
-        context.close()
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        print("GitHubログイン成功！撮影開始...\n")
 
+        # 1. Actions一覧
+        _goto(page, f"{BASE_URL}/actions")
+        _shot(page, "01_actions_overview.png")
 
-def _take_pages(page) -> None:
-    """各ページのスクショを撮影する"""
-    targets = [
-        # GitHub Actions一覧（複数ワークフロー同時稼働）
-        (f"{BASE_URL}/actions", "01_actions_overview.png", None),
-        # Issues一覧
-        (f"{BASE_URL}/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-desc", "02_issues_open.png", None),
-        # Pull Requests一覧
-        (f"{BASE_URL}/pulls?q=is%3Apr+sort%3Aupdated-desc", "03_pulls_list.png", None),
-        # GitHub Projects（あれば）
-        (f"https://github.com/orgs/aicon-app-dev/projects", "04_projects_board.png", None),
-        # Actions ワークフロー一覧
-        (f"{BASE_URL}/actions?query=workflow%3Aclaude", "05_claude_workflows.png", None),
-    ]
+        # 2. Issues一覧
+        _goto(page, f"{BASE_URL}/issues?q=is%3Aissue+sort%3Aupdated-desc")
+        _shot(page, "02_issues_list.png")
 
-    for url, filename, selector in targets:
-        print(f"撮影中: {filename}")
-        try:
-            page.goto(url)
-            page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(2000)
-            if selector:
-                element = page.query_selector(selector)
-                if element:
-                    element.screenshot(path=f"{SAVE_DIR}/{filename}")
-                else:
-                    page.screenshot(path=f"{SAVE_DIR}/{filename}", full_page=False)
-            else:
-                page.screenshot(path=f"{SAVE_DIR}/{filename}", full_page=False)
-            print(f"  保存: {SAVE_DIR}/{filename}")
-        except Exception as e:
-            print(f"  エラー: {e}")
+        # 3. PR一覧
+        _goto(page, f"{BASE_URL}/pulls?q=is%3Apr+sort%3Aupdated-desc")
+        _shot(page, "03_pulls_list.png")
 
-    # 最新のPRを1つ開いてChecksタブを撮る
-    print("最新PRのChecksタブを撮影中...")
-    try:
-        page.goto(f"{BASE_URL}/pulls?q=is%3Apr+sort%3Aupdated-desc")
-        page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(1000)
-        # 最初のPRリンクをクリック
-        first_pr = page.query_selector('[data-testid="listview-item-title-link"]')
-        if not first_pr:
-            first_pr = page.query_selector(".js-navigation-open.Link--primary")
-        if first_pr:
-            first_pr.click()
-            page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(1000)
-            page.screenshot(path=f"{SAVE_DIR}/06_pr_detail.png", full_page=False)
+        # 4. Projects
+        _goto(page, "https://github.com/orgs/aicon-app-dev/projects?query=")
+        _shot(page, "04_projects.png")
 
-            # Checksタブ
-            checks_tab = page.query_selector('a[href*="checks"]')
-            if checks_tab:
-                checks_tab.click()
-                page.wait_for_load_state("networkidle")
-                page.wait_for_timeout(2000)
-                page.screenshot(path=f"{SAVE_DIR}/07_pr_checks.png", full_page=False)
+        # 5. Claude系ワークフロー
+        _goto(page, f"{BASE_URL}/actions?query=workflow%3Aclaude")
+        _shot(page, "05_claude_workflows.png")
 
-            # Files changedタブ（diff画面）
-            files_tab = page.query_selector('a[href*="files"]')
-            if files_tab:
-                files_tab.click()
-                page.wait_for_load_state("networkidle")
-                page.wait_for_timeout(2000)
-                page.screenshot(path=f"{SAVE_DIR}/08_pr_diff.png", full_page=False)
-    except Exception as e:
-        print(f"  PR詳細エラー: {e}")
+        # 6-8. 最新PR詳細
+        _goto(page, f"{BASE_URL}/pulls?q=is%3Apr+sort%3Aupdated-desc")
+        pr_links = page.query_selector_all('a[id^="issue_"]')
+        if pr_links:
+            href = pr_links[0].get_attribute("href")
+            if href and not href.startswith("http"):
+                href = f"https://github.com{href}"
 
-    # 最新のIssueを1つ開いてタイムライン（ラベル自動遷移）を撮る
-    print("最新Issueのタイムラインを撮影中...")
-    try:
-        page.goto(f"{BASE_URL}/issues?q=is%3Aissue+sort%3Aupdated-desc")
-        page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(1000)
-        first_issue = page.query_selector('[data-testid="listview-item-title-link"]')
-        if not first_issue:
-            first_issue = page.query_selector(".js-navigation-open.Link--primary")
-        if first_issue:
-            first_issue.click()
-            page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(1000)
-            page.screenshot(
-                path=f"{SAVE_DIR}/09_issue_timeline.png", full_page=True
-            )
-    except Exception as e:
-        print(f"  Issue詳細エラー: {e}")
+            _goto(page, href)
+            _shot(page, "06_pr_detail.png")
+            _shot(page, "06b_pr_full.png", full_page=True)
 
-    print(f"\n撮影完了！保存先: {SAVE_DIR}/")
+            _goto(page, f"{href}/checks")
+            _shot(page, "07_pr_checks.png")
+
+            _goto(page, f"{href}/files")
+            _shot(page, "08_pr_diff.png")
+
+        # 9. 最新Issue詳細
+        _goto(page, f"{BASE_URL}/issues?q=is%3Aissue+sort%3Aupdated-desc")
+        issue_links = page.query_selector_all('a[id^="issue_"]')
+        if issue_links:
+            href = issue_links[0].get_attribute("href")
+            if href and not href.startswith("http"):
+                href = f"https://github.com{href}"
+            _goto(page, href)
+            _shot(page, "09_issue_detail.png")
+            _shot(page, "09b_issue_full.png", full_page=True)
+
+        # 10. ラベル一覧
+        _goto(page, f"{BASE_URL}/labels")
+        _shot(page, "10_labels.png")
+        _shot(page, "10b_labels_full.png", full_page=True)
+
+        # 11-12. Actions成功/進行中
+        _goto(page, f"{BASE_URL}/actions?query=is%3Asuccess")
+        _shot(page, "11_actions_success.png")
+
+        _goto(page, f"{BASE_URL}/actions?query=is%3Ain_progress")
+        _shot(page, "12_actions_in_progress.png")
+
+        print(f"\n撮影完了！ {SAVE_DIR}")
+        page.close()
+        browser.close()
 
 
 if __name__ == "__main__":
