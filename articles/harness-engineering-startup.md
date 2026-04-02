@@ -297,7 +297,7 @@ Lefthookによるpre-commitフックと合わせて、ローカルでもCI上で
 
 ### 2-6. プレビュー環境
 
-![PRにpreviewラベルを付けるとQRコード付きのプレビュービルドが自動生成される](/images/preview_qr_comment.png)
+![PRにpreviewラベルを付けるとQRコード付きのプレビュービルドが自動生成される](/images/preview_qr_comment.jpg)
 
 *`preview` ラベルを付けると、GitHub ActionsがExpoビルドを実行しQRコードをPRにコメント。スマホでスキャンするだけでその場で動作確認できる。*
 
