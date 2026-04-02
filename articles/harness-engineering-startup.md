@@ -1,5 +1,5 @@
 ---
-title: "57万行のプロダクトコードにハーネス+エージェントを導入し、「Issueを立てて寝るとPRが上がる」環境を構築した話"
+title: "57万行のプロダクトにハーネス+エージェントを導入し、「Issueを立てて寝るとPRが上がる」環境を構築した話"
 emoji: "🤖"
 type: "tech"
 topics: ["harness-engineering", "github-actions", "claude", "ai", "startup"]
