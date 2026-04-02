@@ -1,5 +1,5 @@
 ---
-title: "57万行のプロダクトにハーネス+エージェントを導入し、「Issueを立てて寝るとPRが上がる」環境を構築した話"
+title: "ハーネスエンジニアリングを極めたら、IssueからAIエージェントが動き、人間の役割は要件定義だけになった"
 emoji: "🤖"
 type: "tech"
 topics: ["harness-engineering", "github-actions", "claude", "ai", "startup"]
@@ -79,6 +79,10 @@ published: true
 これが我々の自律開発の起点であり、これが全てと言ってもいい。
 
 ### 2-2. Issue駆動の自動化
+
+![要件定義Issueでの壁打ち例 — AIが要求を分析し質問を投げ、人間が回答する](/images/requirements_issue_example.png)
+
+*要件定義エージェントがIssue上で壁打ちしている実例。AIが現状の実装を分析した上で質問を投げ、人間が回答することで要件が詰まっていく。*
 
 **やったこと：**
 
@@ -215,6 +219,10 @@ jobs:
 
 エージェントがうまく動作する鍵は、 **各エージェントに正しいスキル（システムプロンプト）を与えること** に尽きる。プロンプトの精度がそのまま出力の精度になる。
 
+![自動レビューエージェントの出力例 — 指摘を重要度別に分類し、approve/request changesを判断する](/images/auto_review_example.png)
+
+*10番の自動レビューエージェントの出力例。指摘をHigh/Medium/Lowに分類し、既存の防護策（GraphQLバリデーション等）を考慮した上でapprove判定を下している。*
+
 `claude-auto-review.yml` — レビューエージェントの起動部分。Claudeが自身の修正pushをレビューしないようスキップ判定し、同一コミットへの重複レビューも防止する。
 
 ```yaml
@@ -288,6 +296,10 @@ jobs:
 Lefthookによるpre-commitフックと合わせて、ローカルでもCI上でも同じリントが走る二重チェック体制になっている。
 
 ### 2-6. プレビュー環境
+
+![PRにpreviewラベルを付けるとQRコード付きのプレビュービルドが自動生成される](/images/preview_qr_comment.png)
+
+*`preview` ラベルを付けると、GitHub ActionsがExpoビルドを実行しQRコードをPRにコメント。スマホでスキャンするだけでその場で動作確認できる。*
 
 PRごとにプレビュー環境が自動で立ち上がる仕組みをTerraformで構築した。
 
