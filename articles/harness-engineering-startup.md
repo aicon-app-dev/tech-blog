@@ -2,7 +2,7 @@
 title: "ハーネスエンジニアリングを極めたら、IssueからAIエージェントが動き、人間の役割は要件定義だけになった"
 emoji: "🤖"
 type: "tech"
-topics: ["harness-engineering", "github-actions", "claude", "ai", "startup"]
+topics: ["harness-engineering", "github-actions", "claude", "ai", "startup","ハーネス","ハーネスエンジニアリング","AIエージェント","エージェント"]
 published: true
 ---
 
